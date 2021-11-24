@@ -1,9 +1,11 @@
 package com.ieseljust.ad.myDBMS;
 
 import java.sql.*;
-import java.util.Scanner;
 
 import java.util.ArrayList;
+import java.util.Scanner;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 class databaseManager{
     
@@ -13,7 +15,7 @@ class databaseManager{
     private String pass;
     private String dbname;
 
-    private Connection laConexion;
+    private Connection laConexio;
 
     databaseManager(){
         // TO-DO: Inicialització dels atributs de la classe
@@ -22,14 +24,23 @@ class databaseManager{
         pass = "root";
         server = "localhost";
         port = "3308";
-        dbname = "";
+        dbname = "bdjocs";
 
-        laConexion = null;
+        laConexio = null;
     }
 
     databaseManager(String server, String port, String user, String pass, String dbname){
         // TO-DO:   Inicialització dels atributs de la classe
         //          amb els valors indicats
+
+        this.user = "root";
+        this.pass = "root";
+        this.server = "localhost";
+        this.port = "3308";
+        this.dbname = "bdjocs";
+
+        laConexio = null;
+
     }
 
     public Connection connectDatabase(){
@@ -40,6 +51,16 @@ class databaseManager{
             // 1. Carreguem el driver JDBC
             // 2. Crear la connexió a la BD
             // 3. Retornar la connexió
+        if (this.laConexio == null){
+            try {
+                this.laConexio = DriverManager.getConnection("jdbc:mysql://"+this.server+":"+this.port+"/"+this.dbname+"?"+
+                        "useUnicode=true&characterEncoding=UTF-8&user="+this.user+"&"+
+                        "password="+this.pass+"&allowMultipleQueries=true");
+            } catch (SQLException e) {
+                Logger.getLogger(connectionManager.class.getName()).log(Level.SEVERE, null, e);
+            }
+            return this.laConexio;
+        }
 
         // Recordeu el tractament d'errors
 
@@ -54,6 +75,21 @@ class databaseManager{
         // 2. Obtenir les metadades
         // 3. Recórrer el resultset resultant mostrant els resultats
         // 4. Tancar la connexió
+
+        String sentSQL = "SHOW TABLES";
+        try {
+            Statement st = connectDatabase().createStatement();
+            ResultSet rs = st.executeQuery("SHOW TABLES");
+
+            while(rs.next()){
+                System.out.println(rs.getString("Tables_in_"+this.dbname));
+            }
+            laConexio.close();
+        } catch (SQLException ex) {
+            Logger.getLogger(connectionManager.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+
         
          // Recordeu el tractament d'errors
     }
@@ -77,6 +113,58 @@ class databaseManager{
         // - Gestionar els diferents errors
         // - Si la clau primària de la taula és autoincremental, que ens mostre el valor d'aquesta quan acabe.
 
+        try {
+            Scanner keyboard = new Scanner(System.in);
+
+            DatabaseMetaData dbmd = laConexio.getMetaData();
+            ArrayList<String> colum = new ArrayList<>();
+            ArrayList<String> type = new ArrayList<>();
+
+            ResultSet rs = dbmd.getColumns(dbname, null, table, null);
+            //Comprobante de las columnas
+            while (rs.next()) {
+                String columnName = rs.getString(4);
+                String tipus = rs.getString(6);
+                System.out.print(columnName + "(" + tipus + "):");
+                String valor = keyboard.nextLine();
+                colum.add(valor);
+                type.add(tipus);
+
+            }
+
+            String insertar = "INSERT INTO " + table + " VALUES(";
+            String espacio = "";
+            for (int i = 0; i < colum.size(); i++) {
+                espacio += "?,";
+            }
+            espacio = espacio.substring(0, espacio.length() - 1);
+            espacio += ")";
+            insertar += espacio;
+
+            PreparedStatement pstm = laConexio.prepareStatement(insertar);
+            for (int i = 0; i < colum.size(); i++) {
+                if (type.get(i).equals("INT")) {
+                    pstm.setInt(i+1, Integer.valueOf(colum.get(i)));
+                }
+                if (type.get(i).equals("FLOAT")) {
+                    pstm.setFloat(i+1, Float.valueOf(colum.get(i)));
+                }
+                if (type.get(i).equals("DATE")) {
+                    pstm.setDate(i+1, Date.valueOf(colum.get(i)));
+                }
+                if (type.get(i).equals("VARCHAR")) {
+                    pstm.setString(i+1,colum.get(i));
+                }
+                if (type.get(i).equals("CHAR")) {
+                    pstm.setString(i+1,colum.get(i));
+                }
+            }
+            pstm.executeUpdate();
+
+        } catch (SQLException ex) {
+            Logger.getLogger(databaseManager.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
     }
 
 
@@ -85,7 +173,59 @@ class databaseManager{
         // TO-DO: Mostra la descripció de la taula indicada, 
         //        mostrant: nom, tipus de dada i si pot tindre valor no nul
         //        Informeu també de les Claus Primàries i externes
-        
+
+        try {
+
+            DatabaseMetaData dbmd = laConexio.getMetaData();
+
+            ResultSet rspk = dbmd.getPrimaryKeys(dbname, null, table);
+
+            ArrayList<String> pks = new ArrayList<>();
+            while (rspk.next()) {
+                pks.add(rspk.getString(4));
+            }
+            rspk.close();
+
+            ResultSet rsfk = dbmd.getImportedKeys(dbname, null, table);
+
+            ArrayList<String> fks = new ArrayList<>();
+            ArrayList<String> fksExt = new ArrayList<>();
+
+            while (rsfk.next()) {
+                fks.add(rsfk.getString(8));
+                fksExt.add(rsfk.getString(3));
+            }
+
+            rsfk.close();
+
+            System.out.println("");
+            System.out.println("\t TABLA " + table + ConsoleColors.RESET);
+            System.out.println(String.format("%-20s %-20s %-20s", "Atributo o Clave", "Tipo", "Null?"));
+
+            ResultSet columnes = dbmd.getColumns(dbname, null, table, null);
+
+            while (columnes.next()) {
+                String columnName = columnes.getString(4);
+
+                if (pks.contains(columnName)) {
+                    columnName = columnName + "(PK)";
+                }
+
+
+                if (fks.contains(columnName)) {
+                    columnName = columnName + "(FK) " + fksExt.get(fks.indexOf(columnName));
+                }
+
+                String tipus = columnes.getString(6);
+                String nullable = columnes.getString(18);
+                //separacion de las tablas
+                System.out.println(String.format("%-20s %-20s %-20s", columnName, tipus, nullable));
+            }
+        } catch (SQLException ex) {
+
+            System.out.println("Nombre Incorrecto");
+        }
+
     }
 
     public void startShell(){
